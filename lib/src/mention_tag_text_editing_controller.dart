@@ -215,7 +215,16 @@ class MentionTagTextEditingController extends TextEditingController {
       if (indexMentionStart != -1 &&
           indexMentionStart >= 0 &&
           indexMentionStart <= indexCursor) {
-        return value.substring(indexMentionStart - 1, indexCursor);
+
+        // Get the mention substring
+        final mentionCandidate = value.substring(indexMentionStart - 1, indexCursor);
+
+        // Check if mentionCandidate contains a space
+        if (mentionCandidate.contains(' ')) {
+          return null;
+        }
+
+        return mentionCandidate;
       }
     }
     return null;
