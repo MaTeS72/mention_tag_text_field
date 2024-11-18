@@ -309,6 +309,11 @@ class MentionTagTextEditingController extends TextEditingController {
     }
   }
 
+  List<String> _detectedUrls = [];
+
+  /// Get the list of detected URLs
+  List<String> get urls => List.unmodifiable(_detectedUrls);
+
  @override
 TextSpan buildTextSpan({
   required BuildContext context,
@@ -325,7 +330,7 @@ TextSpan buildTextSpan({
   int currentIndex = 0;
 
   final List tempList = List.from(_mentions);
-  List<String> detectedUrls = [];
+  _detectedUrls = [];
 
   for (final match in matches) {
     if (match.start > currentIndex) {
@@ -352,7 +357,7 @@ TextSpan buildTextSpan({
     } else if (match.group(2) != null) {
       // URL detected
       final url = match.group(2)!;
-      detectedUrls.add(url);
+      _detectedUrls.add(url);
       spans.add(TextSpan(
         text: url,
         style: mentionTagDecoration.mentionTextStyle,
@@ -368,9 +373,10 @@ TextSpan buildTextSpan({
       style: style,
     ));
   }
+
     // Invoke the callback if URLs are found
-    if (detectedUrls.isNotEmpty) {
-      onUrlsFound?.call(detectedUrls);
+    if (_detectedUrls.isNotEmpty) {
+      onUrlsFound?.call(_detectedUrls);
     }
 
   return TextSpan(
