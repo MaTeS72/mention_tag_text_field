@@ -217,7 +217,8 @@ class MentionTagTextEditingController extends TextEditingController {
       if (indexMentionStart != -1 &&
           indexMentionStart >= 0 &&
           indexMentionStart <= indexCursor) {
-        return value.substring(indexMentionStart - 1, indexCursor);
+
+    return value.substring(indexMentionStart - 1, indexCursor);
       }
     }
     return null;
@@ -321,24 +322,27 @@ class MentionTagTextEditingController extends TextEditingController {
       debugPrint(e.toString());
     }
   }
+  List<String> _detectedUrls = [];
 
-  @override
-  TextSpan buildTextSpan({
-    required BuildContext context,
-    TextStyle? style,
-    required bool withComposing,
-  }) {
-    // Combined pattern to detect mentions and URLs
-    final combinedPattern = RegExp(
-      '(${Constants.mentionEscape})|(${_urlSearchRegex.pattern})',
-    );
+  /// Get the list of detected URLs
+  List<String> get urls => List.unmodifiable(_detectedUrls);
+ @override
+TextSpan buildTextSpan({
+  required BuildContext context,
+  TextStyle? style,
+  required bool withComposing,
+}) {
+  // Combined pattern to detect mentions and URLs
+  final combinedPattern = RegExp(
+    '(${Constants.mentionEscape})|(${_urlSearchRegex.pattern})',
+  );
 
     final matches = combinedPattern.allMatches(super.text);
     List<InlineSpan> spans = [];
     int currentIndex = 0;
 
-    final List tempList = List.from(_mentions);
-    List<String> detectedUrls = [];
+  final List tempList = List.from(_mentions);
+    _detectedUrls = [];
 
     for (final match in matches) {
       if (match.start > currentIndex) {
@@ -349,28 +353,28 @@ class MentionTagTextEditingController extends TextEditingController {
         ));
       }
 
-      if (match.group(1) != null) {
-        // Mention escape character
-        if (tempList.isNotEmpty) {
-          final mention = tempList.removeAt(0);
-          spans.add(WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: mention.stylingWidget ??
-                Text(
-                  mention.mention,
-                  style: mentionTagDecoration.mentionTextStyle,
-                ),
-          ));
-        }
-      } else if (match.group(2) != null) {
-        // URL detected
-        final url = match.group(2)!;
-        detectedUrls.add(url);
-        spans.add(TextSpan(
-          text: url,
-          style: mentionTagDecoration.mentionTextStyle,
+    if (match.group(1) != null) {
+      // Mention escape character
+      if (tempList.isNotEmpty) {
+        final mention = tempList.removeAt(0);
+        spans.add(WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: mention.stylingWidget ??
+              Text(
+                mention.mention,
+                style: mentionTagDecoration.mentionTextStyle,
+              ),
         ));
       }
+    } else if (match.group(2) != null) {
+      // URL detected
+      final url = match.group(2)!;
+      _detectedUrls.add(url);
+      spans.add(TextSpan(
+        text: url,
+        style: mentionTagDecoration.mentionTextStyle,
+      ));
+    }
 
       currentIndex = match.end;
     }
@@ -382,8 +386,8 @@ class MentionTagTextEditingController extends TextEditingController {
       ));
     }
     // Invoke the callback if URLs are found
-    if (detectedUrls.isNotEmpty) {
-      onUrlsFound?.call(detectedUrls);
+    if (_detectedUrls.isNotEmpty) {
+      onUrlsFound?.call(_detectedUrls);
     }
 
     return TextSpan(
