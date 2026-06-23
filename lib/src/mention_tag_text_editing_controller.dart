@@ -3,9 +3,11 @@ import 'package:mention_tag_text_field/src/constants.dart';
 import 'package:mention_tag_text_field/src/mention_tag_data.dart';
 import 'package:mention_tag_text_field/src/mention_tag_decoration.dart';
 import 'package:mention_tag_text_field/src/string_extensions.dart';
+
 final RegExp _urlSearchRegex = RegExp(
   r'(?:(?:https?:\/\/|www\.)[\w@:%._\+~#=\/?&,\-]+)|(?:youtu\.be\/[\w@:%_\+,.~#?&\/=\-]+)',
 );
+
 class MentionTagTextEditingController extends TextEditingController {
   MentionTagTextEditingController() {
     addListener(_updateCursorPostion);
@@ -20,6 +22,10 @@ class MentionTagTextEditingController extends TextEditingController {
   void _updateCursorPostion() {
     _cursorPosition = selection.base.offset;
     if (_indexMentionEnd == null) return;
+    // A plain tap that lands as a range selection (Android hit-testing near a
+    // mention span) must not re-run mention mutation while the user is only
+    // repositioning the caret. Only act on collapsed selections.
+    if (!selection.isCollapsed) return;
     if (_cursorPosition - _indexMentionEnd! == 1) {
       onChanged(super.text);
     } else if (_cursorPosition - _indexMentionEnd! != 1) {
@@ -60,8 +66,10 @@ class MentionTagTextEditingController extends TextEditingController {
   void remove({required int index}) {
     try {
       _mentions.removeAt(index);
-      super.text =
-          super.text.removeCharacterAtCount(Constants.mentionEscape, index + 1);
+      super.text = super.text.removeCharacterAtCount(
+            Constants.mentionEscape,
+            index + 1,
+          );
     } catch (e) {
       debugPrint(e.toString());
     }
@@ -74,24 +82,31 @@ class MentionTagTextEditingController extends TextEditingController {
   set initialMentions(List<(String, Object?, Widget?)> value) {
     for (final mentionTuple in value) {
       if (!super.text.contains(mentionTuple.$1)) return;
-      super.text =
-          super.text.replaceFirst(mentionTuple.$1, Constants.mentionEscape);
+      super.text = super.text.replaceFirst(
+            mentionTuple.$1,
+            Constants.mentionEscape,
+          );
       _temp = super.text;
 
-      final mentionSymbol =
-          mentionTuple.$1.checkMentionSymbol(mentionTagDecoration.mentionStart);
+      final mentionSymbol = mentionTuple.$1.checkMentionSymbol(
+        mentionTagDecoration.mentionStart,
+      );
       if (mentionSymbol.isEmpty) throw 'No mention symbol with initialMention';
 
       final mention = mentionTagDecoration.showMentionStartSymbol
           ? mentionTuple.$1
-          : mentionTuple.$1
-              .removeMentionStart(mentionTagDecoration.mentionStart);
+          : mentionTuple.$1.removeMentionStart(
+              mentionTagDecoration.mentionStart,
+            );
 
-      _mentions.add(MentionTagElement(
+      _mentions.add(
+        MentionTagElement(
           mentionSymbol: mentionSymbol,
           mention: mention,
           data: mentionTuple.$2,
-          stylingWidget: mentionTuple.$3));
+          stylingWidget: mentionTuple.$3,
+        ),
+      );
     }
   }
 
@@ -121,10 +136,11 @@ class MentionTagTextEditingController extends TextEditingController {
         ? "$mentionSymbol$label"
         : label;
     final MentionTagElement mentionTagElement = MentionTagElement(
-        mentionSymbol: mentionSymbol,
-        mention: mention,
-        data: data,
-        stylingWidget: stylingWidget);
+      mentionSymbol: mentionSymbol,
+      mention: mention,
+      data: data,
+      stylingWidget: stylingWidget,
+    );
 
     final textPart = super.text.substring(0, indexCursor);
     final indexPosition = textPart.countChar(Constants.mentionEscape);
@@ -135,20 +151,27 @@ class MentionTagTextEditingController extends TextEditingController {
 
   void _replaceLastSubstringWithEscaping(int indexCursor, String replacement) {
     try {
-      _replaceLastSubstring(indexCursor, Constants.mentionEscape,
-          allowDecrement: false);
+      _replaceLastSubstring(
+        indexCursor,
+        Constants.mentionEscape,
+        allowDecrement: false,
+      );
 
       selection = TextSelection.collapsed(
-          offset: indexCursor -
-              replacement.length +
-              (1 + mentionTagDecoration.mentionBreak.length));
+        offset: indexCursor -
+            replacement.length +
+            (1 + mentionTagDecoration.mentionBreak.length),
+      );
     } catch (e) {
       debugPrint(e.toString());
     }
   }
 
-  void _replaceLastSubstring(int indexCursor, String replacement,
-      {bool allowDecrement = true}) {
+  void _replaceLastSubstring(
+    int indexCursor,
+    String replacement, {
+    bool allowDecrement = true,
+  }) {
     if (super.text.length == 1) {
       super.text = !allowDecrement
           ? "$replacement${mentionTagDecoration.mentionBreak}"
@@ -161,16 +184,18 @@ class MentionTagTextEditingController extends TextEditingController {
     indexMentionStart = indexCursor - indexMentionStart;
 
     super.text = super.text.replaceRange(
-        !allowDecrement ? indexMentionStart - 1 : indexMentionStart,
-        indexCursor,
-        "$replacement${mentionTagDecoration.mentionBreak}");
+          !allowDecrement ? indexMentionStart - 1 : indexMentionStart,
+          indexCursor,
+          "$replacement${mentionTagDecoration.mentionBreak}",
+        );
 
     _temp = super.text;
   }
 
   int _getIndexFromMentionStart(int indexCursor, String value) {
-    final mentionStartPattern =
-        RegExp(mentionTagDecoration.mentionStart.join('|'));
+    final mentionStartPattern = RegExp(
+      mentionTagDecoration.mentionStart.join('|'),
+    );
     var indexMentionStart =
         value.substring(0, indexCursor).reversed.indexOf(mentionStartPattern);
     return indexMentionStart;
@@ -215,9 +240,11 @@ class MentionTagTextEditingController extends TextEditingController {
       if (indexMentionStart != -1 &&
           indexMentionStart >= 0 &&
           indexMentionStart <= indexCursor) {
-
         // Get the mention substring
-        final mentionCandidate = value.substring(indexMentionStart - 1, indexCursor);
+        final mentionCandidate = value.substring(
+          indexMentionStart - 1,
+          indexCursor,
+        );
 
         // Check if mentionCandidate contains a space
         if (mentionCandidate.contains(' ')) {
@@ -236,6 +263,11 @@ class MentionTagTextEditingController extends TextEditingController {
   }
 
   void onChanged(String value) async {
+    // URL detection runs on text changes — never from buildTextSpan — so the
+    // paint path stays free of notifier writes / setState that could re-run
+    // selection mid-gesture and stomp a just-set caret. Fired post-frame to
+    // stay out of the current build.
+    _notifyUrlsFound(value);
     if (onMention == null) return;
     _indexMentionEnd = null;
     String? mention = _getMention(value);
@@ -245,7 +277,10 @@ class MentionTagTextEditingController extends TextEditingController {
     if (mention != null && mention.startsWith('#') && value.endsWith(' ')) {
       final processedMention = mention.replaceFirst('#', '').trim();
       addMention(
-          label: processedMention, data: processedMention, stylingWidget: null);
+        label: processedMention,
+        data: processedMention,
+        stylingWidget: null,
+      );
       _updateOnMention(null);
     }
 
@@ -254,6 +289,23 @@ class MentionTagTextEditingController extends TextEditingController {
     }
 
     _temp = value;
+  }
+
+  /// Detect URLs in [value] and notify [onUrlsFound] after the current frame.
+  ///
+  /// Deliberately not called from `buildTextSpan`: invoking the callback there
+  /// triggers a rebuild from inside the paint path, which can re-run
+  /// selection/layout mid-gesture and stomp a just-set caret on Android.
+  void _notifyUrlsFound(String value) {
+    if (onUrlsFound == null) return;
+    final urls = _urlSearchRegex
+        .allMatches(value)
+        .map((match) => match.group(0)!)
+        .toList();
+    if (urls.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      onUrlsFound?.call(urls);
+    });
   }
 
   void _checkAndUpdateOnMention(
@@ -286,26 +338,33 @@ class MentionTagTextEditingController extends TextEditingController {
 
       final mentionsCount = value.countChar(Constants.mentionEscape);
       final textPart = super.text.substring(0, indexCursor);
-      final mentionsCountTillCursor =
-          textPart.countChar(Constants.mentionEscape);
+      final mentionsCountTillCursor = textPart.countChar(
+        Constants.mentionEscape,
+      );
 
       _checkAndUpdateOnMention(value, mentionsCountTillCursor, indexCursor);
       if (mentionsCount == _mentions.length) return;
 
-      final MentionTagElement removedMention =
-          _mentions.removeAt(mentionsCountTillCursor);
+      final MentionTagElement removedMention = _mentions.removeAt(
+        mentionsCountTillCursor,
+      );
 
       if (mentionTagDecoration.allowDecrement &&
           _temp.length - value.length == 1) {
-        String replacementText = removedMention.mention
-            .substring(0, removedMention.mention.length - 1);
+        String replacementText = removedMention.mention.substring(
+          0,
+          removedMention.mention.length - 1,
+        );
 
         replacementText = mentionTagDecoration.showMentionStartSymbol
             ? replacementText
             : "${removedMention.mentionSymbol}$replacementText";
 
-        super.text =
-            super.text.replaceRange(indexCursor, indexCursor, replacementText);
+        super.text = super.text.replaceRange(
+              indexCursor,
+              indexCursor,
+              replacementText,
+            );
 
         final offset = mentionTagDecoration.showMentionStartSymbol
             ? indexCursor + removedMention.mention.length - 1
@@ -323,74 +382,86 @@ class MentionTagTextEditingController extends TextEditingController {
   /// Get the list of detected URLs
   List<String> get urls => List.unmodifiable(_detectedUrls);
 
- @override
-TextSpan buildTextSpan({
-  required BuildContext context,
-  TextStyle? style,
-  required bool withComposing,
-}) {
-  // Combined pattern to detect mentions and URLs
-  final combinedPattern = RegExp(
-    '(${Constants.mentionEscape})|(${_urlSearchRegex.pattern})',
-  );
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    // Combined pattern to detect mentions and URLs
+    final combinedPattern = RegExp(
+      '(${Constants.mentionEscape})|(${_urlSearchRegex.pattern})',
+    );
 
-  final matches = combinedPattern.allMatches(super.text);
-  List<InlineSpan> spans = [];
-  int currentIndex = 0;
+    final matches = combinedPattern.allMatches(super.text);
+    List<InlineSpan> spans = [];
+    int currentIndex = 0;
 
-  final List tempList = List.from(_mentions);
-  _detectedUrls = [];
+    final List tempList = List.from(_mentions);
+    _detectedUrls = [];
 
-  for (final match in matches) {
-    if (match.start > currentIndex) {
-      // Add the text before the match as regular text
-      spans.add(TextSpan(
-        text: super.text.substring(currentIndex, match.start),
-        style: style,
-      ));
-    }
+    for (final match in matches) {
+      if (match.start > currentIndex) {
+        // Add the text before the match as regular text
+        spans.add(
+          TextSpan(
+            text: super.text.substring(currentIndex, match.start),
+            style: style,
+          ),
+        );
+      }
 
-    if (match.group(1) != null) {
-      // Mention escape character
-      if (tempList.isNotEmpty) {
-        final mention = tempList.removeAt(0);
-        spans.add(WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: mention.stylingWidget ??
-              Text(
-                mention.mention,
+      if (match.group(1) != null) {
+        // Mention escape character
+        if (tempList.isNotEmpty) {
+          final mention = tempList.removeAt(0);
+          // Default to an inline TextSpan so a mention occupies a glyph run
+          // whose hit-test geometry lines up with the single escape character
+          // it stands for in `text`. A WidgetSpan occupies one logical offset
+          // but an arbitrary rendered width, which makes Android resolve a tap
+          // near it to a non-collapsed range ("selects a span"). Only fall back
+          // to a WidgetSpan when a caller supplies a custom stylingWidget that
+          // can't be expressed as styled text.
+          if (mention.stylingWidget != null) {
+            spans.add(
+              WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: mention.stylingWidget!,
+              ),
+            );
+          } else {
+            spans.add(
+              TextSpan(
+                text: mention.mention,
                 style: mentionTagDecoration.mentionTextStyle,
               ),
-        ));
+            );
+          }
+        }
+      } else if (match.group(2) != null) {
+        // URL detected
+        final url = match.group(2)!;
+        _detectedUrls.add(url);
+        spans.add(
+          TextSpan(text: url, style: mentionTagDecoration.mentionTextStyle),
+        );
       }
-    } else if (match.group(2) != null) {
-      // URL detected
-      final url = match.group(2)!;
-      _detectedUrls.add(url);
-      spans.add(TextSpan(
-        text: url,
-        style: mentionTagDecoration.mentionTextStyle,
-      ));
+
+      currentIndex = match.end;
     }
 
-    currentIndex = match.end;
-  }
-
-  if (currentIndex < super.text.length) {
-    spans.add(TextSpan(
-      text: super.text.substring(currentIndex),
-      style: style,
-    ));
-  }
-
-    // Invoke the callback if URLs are found
-    if (_detectedUrls.isNotEmpty) {
-      onUrlsFound?.call(_detectedUrls);
+    if (currentIndex < super.text.length) {
+      spans.add(
+        TextSpan(text: super.text.substring(currentIndex), style: style),
+      );
     }
 
-  return TextSpan(
-    style: style,
-    children: spans,
-  );
-}
+    // URL detection callback is intentionally NOT invoked here. Notifying
+    // listeners from the paint path triggers a rebuild mid-layout, which can
+    // re-run selection and stomp a just-set caret on Android. The callback
+    // fires from `onChanged` via `_notifyUrlsFound` instead. `_detectedUrls`
+    // is still populated above to back the `urls` getter.
+
+    return TextSpan(style: style, children: spans);
+  }
 }
