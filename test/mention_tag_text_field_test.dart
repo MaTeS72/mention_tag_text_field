@@ -162,6 +162,55 @@ void main() {
       },
     );
 
+    testWidgets(
+      'with maxWords null, a multi-word candidate keeps flowing to onMention '
+      'after a space (so the search overlay stays open for spaced names)',
+      (tester) async {
+        String? lastMention;
+        controller
+          ..mentionTagDecoration = const MentionTagDecoration(maxWords: null)
+          ..onMention = (m) => lastMention = m;
+
+        await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+
+        // Type "@Derek Ross" with the caret at the end; a space mid-candidate
+        // must NOT null out the mention when no word limit is set.
+        controller
+          ..text = '@Derek Ross'
+          ..selection = const TextSelection.collapsed(offset: 11);
+        controller.onChanged('@Derek Ross');
+
+        expect(
+          lastMention,
+          '@Derek Ross',
+          reason: 'maxWords == null must allow spaced multi-word candidates',
+        );
+      },
+    );
+
+    testWidgets(
+      'with maxWords set, a space still ends the candidate (unchanged behavior)',
+      (tester) async {
+        String? lastMention;
+        controller
+          ..mentionTagDecoration = const MentionTagDecoration(maxWords: 1)
+          ..onMention = (m) => lastMention = m;
+
+        await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+
+        controller
+          ..text = '@Derek Ross'
+          ..selection = const TextSelection.collapsed(offset: 11);
+        controller.onChanged('@Derek Ross');
+
+        expect(
+          lastMention,
+          isNull,
+          reason: 'a word limit must still bail on a space',
+        );
+      },
+    );
+
     test(
       'the selection listener ignores non-collapsed (range) selections '
       'while a mention is mid-edit',

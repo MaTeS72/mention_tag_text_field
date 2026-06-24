@@ -246,8 +246,15 @@ class MentionTagTextEditingController extends TextEditingController {
           indexCursor,
         );
 
-        // Check if mentionCandidate contains a space
-        if (mentionCandidate.contains(' ')) {
+        // Check if mentionCandidate contains a space.
+        //
+        // When [maxWords] is null the field places no word limit on a mention,
+        // so a multi-word candidate (e.g. a display name like "Derek Ross")
+        // must keep flowing through to [onMention] — otherwise the search
+        // overlay is killed the instant the user types a space. Only bail on a
+        // space when a word limit is actually set.
+        if (mentionTagDecoration.maxWords != null &&
+            mentionCandidate.contains(' ')) {
           return null;
         }
 
