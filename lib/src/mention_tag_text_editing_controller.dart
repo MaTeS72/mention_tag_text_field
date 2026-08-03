@@ -8,6 +8,14 @@ final RegExp _urlSearchRegex = RegExp(
   r'(?:(?:https?:\/\/|www\.)[\w@:%._\+~#=\/?&,\-]+)|(?:youtu\.be\/[\w@:%_\+,.~#?&\/=\-]+)',
 );
 
+/// A hashtag: `#` at the start of the text or after whitespace, followed by at
+/// least one word character. Kept deliberately narrow so a `#` typed inside a
+/// word (or a bare `#`) renders as plain text.
+///
+/// Uses only non-capturing groups — [buildTextSpan] relies on fixed group
+/// numbers in the combined pattern it builds.
+final RegExp _hashtagRegex = RegExp(r'(?<=^|\s)#\w+');
+
 class MentionTagTextEditingController extends TextEditingController {
   MentionTagTextEditingController() {
     addListener(_updateCursorPostion);
@@ -280,14 +288,19 @@ class MentionTagTextEditingController extends TextEditingController {
     String? mention = _getMention(value);
     _updateOnMention(mention);
 
-    // Check if the mention starts with '#' and ends with a space
+    // A hashtag ends at the first space — but it is only ever *styled*, never
+    // converted into a mention.
+    //
+    // Converting it used to call [addMention], which replaces the whole
+    // candidate in `text` with a single [Constants.mentionEscape] char while
+    // `buildTextSpan` paints the full label back. That makes the painted string
+    // longer than `text`, so every selection offset after a hashtag is off by
+    // (label.length - 1): the caret lands several characters away from where
+    // the user tapped, and the drift compounds per hashtag. Hashtags carry no
+    // data payload worth that cost — they are plain text with a colour — so
+    // they stay literal in `text` and get their styling in [buildTextSpan],
+    // which keeps raw offsets and painted offsets identical.
     if (mention != null && mention.startsWith('#') && value.endsWith(' ')) {
-      final processedMention = mention.replaceFirst('#', '').trim();
-      addMention(
-        label: processedMention,
-        data: processedMention,
-        stylingWidget: null,
-      );
       _updateOnMention(null);
     }
 
@@ -395,9 +408,14 @@ class MentionTagTextEditingController extends TextEditingController {
     TextStyle? style,
     required bool withComposing,
   }) {
-    // Combined pattern to detect mentions and URLs
+    // Combined pattern to detect mentions, URLs and hashtags.
+    //
+    // Hashtags are matched against the literal text (they are never collapsed
+    // into an escape char) so the painted string stays character-for-character
+    // aligned with `text` and the caret lands where the user tapped.
     final combinedPattern = RegExp(
-      '(${Constants.mentionEscape})|(${_urlSearchRegex.pattern})',
+      '(${Constants.mentionEscape})|(${_urlSearchRegex.pattern})'
+      '|(${_hashtagRegex.pattern})',
     );
 
     final matches = combinedPattern.allMatches(super.text);
@@ -451,6 +469,15 @@ class MentionTagTextEditingController extends TextEditingController {
         _detectedUrls.add(url);
         spans.add(
           TextSpan(text: url, style: mentionTagDecoration.mentionTextStyle),
+        );
+      } else if (match.group(3) != null) {
+        // Hashtag — styled in place, so its painted length matches the
+        // characters it actually occupies in `text`.
+        spans.add(
+          TextSpan(
+            text: match.group(3),
+            style: mentionTagDecoration.mentionTextStyle,
+          ),
         );
       }
 

@@ -242,4 +242,211 @@ void main() {
       },
     );
   });
+
+  group('hashtag caret drift', () {
+    /// Types [input] one character at a time the way a real TextField drives
+    /// the controller: each keystroke edits the controller's CURRENT value at
+    /// the caret, then hands the result to onChanged.
+    void typeAll(MentionTagTextEditingController c, String input) {
+      for (final ch in input.split('')) {
+        final at =
+            c.selection.baseOffset < 0 ? c.text.length : c.selection.baseOffset;
+        final next = c.text.replaceRange(at, at, ch);
+        c.value = TextEditingValue(
+          text: next,
+          selection: TextSelection.collapsed(offset: at + ch.length),
+        );
+        c.onChanged(next);
+      }
+    }
+
+    /// The concatenated text of every span [buildTextSpan] paints. This is the
+    /// string Flutter lays out and hit-tests against, so it must stay
+    /// character-for-character aligned with `controller.text` — otherwise
+    /// selection offsets and painted glyphs disagree and the caret lands in the
+    /// wrong place.
+    String paintedText(TextSpan root) {
+      final buffer = StringBuffer();
+      void walk(InlineSpan span) {
+        if (span is TextSpan) {
+          buffer.write(span.text ?? '');
+          span.children?.forEach(walk);
+        }
+      }
+
+      walk(root);
+      return buffer.toString();
+    }
+
+    testWidgets(
+      'typing a space after a hashtag leaves the text and the caret alone '
+      '(the hashtag is not collapsed into a mention escape char)',
+      (tester) async {
+        controller
+          ..mentionTagDecoration = const MentionTagDecoration(maxWords: null)
+          ..onMention = (_) {};
+
+        await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+
+        typeAll(controller, 'Hello #news ');
+
+        expect(
+          controller.text,
+          'Hello #news ',
+          reason: 'the hashtag must stay literal in the raw text',
+        );
+        expect(
+          controller.selection.baseOffset,
+          'Hello #news '.length,
+          reason: 'the caret must not jump backwards when the hashtag closes',
+        );
+        expect(
+          controller.mentions,
+          isEmpty,
+          reason: 'hashtags are styled, never stored as mentions',
+        );
+      },
+    );
+
+    testWidgets(
+      'painted text stays aligned with the raw text after several hashtags, '
+      'so tap offsets resolve to the character the user aimed at',
+      (tester) async {
+        controller
+          ..mentionTagDecoration = const MentionTagDecoration(maxWords: null)
+          ..onMention = (_) {};
+
+        late BuildContext ctx;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (context) {
+                ctx = context;
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        );
+
+        typeAll(controller, 'Hello #news and #flutter today');
+
+        final painted = paintedText(
+          controller.buildTextSpan(
+            context: ctx,
+            style: const TextStyle(),
+            withComposing: false,
+          ),
+        );
+
+        expect(controller.text, 'Hello #news and #flutter today');
+        expect(
+          painted,
+          controller.text,
+          reason: 'any drift here is the caret offset the user loses',
+        );
+      },
+    );
+
+    testWidgets('hashtags are painted with the mention style', (tester) async {
+      controller
+        ..mentionTagDecoration = const MentionTagDecoration(
+          maxWords: null,
+          mentionTextStyle: TextStyle(color: Colors.purple),
+        )
+        ..onMention = (_) {}
+        ..text = 'Hello #news today';
+
+      late BuildContext ctx;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              ctx = context;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+
+      final spans = _flatten(
+        controller.buildTextSpan(
+          context: ctx,
+          style: const TextStyle(),
+          withComposing: false,
+        ),
+      );
+
+      final hashtag = spans.whereType<TextSpan>().firstWhere(
+            (span) => span.text == '#news',
+            orElse: () => const TextSpan(),
+          );
+
+      expect(hashtag.text, '#news');
+      expect(hashtag.style?.color, Colors.purple);
+    });
+
+    testWidgets(
+      'a bare # and a # inside a word are left as plain text',
+      (tester) async {
+        controller
+          ..mentionTagDecoration = const MentionTagDecoration(
+            maxWords: null,
+            mentionTextStyle: TextStyle(color: Colors.purple),
+          )
+          ..onMention = (_) {}
+          ..text = 'a # and c#sharp';
+
+        late BuildContext ctx;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (context) {
+                ctx = context;
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        );
+
+        final spans = _flatten(
+          controller.buildTextSpan(
+            context: ctx,
+            style: const TextStyle(),
+            withComposing: false,
+          ),
+        );
+
+        final styled = spans
+            .whereType<TextSpan>()
+            .where((span) => span.style?.color == Colors.purple);
+
+        expect(
+          styled,
+          isEmpty,
+          reason: 'neither a lone # nor an embedded # is a hashtag',
+        );
+      },
+    );
+
+    testWidgets(
+      'an @ mention still collapses to an escape char and is reported',
+      (tester) async {
+        controller
+          ..mentionTagDecoration = const MentionTagDecoration(maxWords: null)
+          ..onMention = (_) {};
+
+        await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+
+        typeAll(controller, 'Hi @alice');
+        controller.addMention(label: 'alice', data: 'alice-id');
+
+        expect(
+          controller.mentions,
+          ['alice-id'],
+          reason: 'the @ mention path is untouched by the hashtag fix',
+        );
+        expect(controller.getText, 'Hi @alice ');
+      },
+    );
+  });
 }
